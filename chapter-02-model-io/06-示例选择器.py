@@ -61,3 +61,4 @@ selected_example = example_selector.select_examples({"question": question})
 print(f"与输入最相似的示例：{selected_example}")
 # selected_example = example_selector.select(question)
 # %%
+
