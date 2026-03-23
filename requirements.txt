@@ -7,3 +7,4 @@ chromadb
 python-dotenv
 jupyter
 ipykernel
+langchain_classic
