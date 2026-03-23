@@ -8,3 +8,6 @@ python-dotenv
 jupyter
 ipykernel
 langchain_classic
+pymysql
+unstructured
+python-docx
