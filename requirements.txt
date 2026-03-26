@@ -5,6 +5,7 @@ langchain-openai
 openai
 chromadb
 python-dotenv
+redis
 jupyter
 ipykernel
 langchain_classic
