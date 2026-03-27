@@ -14,22 +14,31 @@ LangChain 1.0 基础教程 - 第一个 LLM 调用
 """
 
 import os
+from typing import List
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage
+from langchain_openai import ChatOpenAI
 
 # 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+load_dotenv(dotenv_path="D://Projects//Agent-Learning//.env")
+API_KEY = os.getenv("API_KEY")
+MODEL_NAME = os.getenv("MODEL")
+BASE_URL = os.getenv("BASE_URL")
+print(f"使用模型: {MODEL_NAME}")
+if not API_KEY or API_KEY == "your_api_key_here":
     raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
+        "\n请先在 .env 文件中设置有效的 API_KEY\n"
         "访问 https://console.groq.com/keys 获取免费密钥"
     )
 
 # 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
+model = ChatOpenAI(
+    model=MODEL_NAME, # type: ignore
+    api_key=API_KEY, # type: ignore
+    base_url=BASE_URL,
+    temperature=0.7,
+)
 
 # ============================================================================
 # 示例 1：最简单的 LLM 调用
@@ -55,8 +64,8 @@ def example_1_simple_invoke():
 
     print(f"用户输入: 你好！请用一句话介绍什么是人工智能。")
     print(f"AI 回复: {response.content}")
-    print(f"\n返回对象类型: {type(response)}")
-    print(f"返回对象: {response}")
+    print(f"\n返回对象类型: {type(response)}") # AIMessage 对象
+    print(f"返回对象: {response}") # AIMessage(content='...', response_metadata={...}, additional_kwargs={}, id='...')
 
 # ============================================================================
 # 示例 2：使用消息列表进行对话
@@ -77,15 +86,14 @@ def example_2_messages():
     print("="*70)
 
     # model 已在文件开头通过 get_model() 初始化
-
     # 构建消息列表
-    messages = [
+    messages: List[BaseMessage] = [
         SystemMessage(content="你是一个友好的 Python 编程助手，擅长用简单易懂的方式解释编程概念。 回答字数不超过100字。"),
         HumanMessage(content="什么是 Python 装饰器？ "),
     ]
 
-    print("系统提示:", messages[0].content)
-    print("用户问题:", messages[1].content)
+    print("系统提示:", messages[0].content) # SystemMessage 的内容
+    print("用户问题:", messages[1].content) # HumanMessage 的内容
 
     # 调用模型
     response = model.invoke(messages)
@@ -155,10 +163,11 @@ def example_4_model_parameters():
     print("="*70)
 
     # 创建一个温度较低的模型（更确定性）
-    model_deterministic = init_chat_model(
-        "groq:llama-3.3-70b-versatile",
-        temperature=0.0,  # 最确定性
-        max_tokens=100    # 限制输出长度
+    model_deterministic = ChatOpenAI(
+        model=MODEL_NAME, # type: ignore
+        api_key=API_KEY, # type: ignore
+        base_url=BASE_URL,
+        temperature=0.0,  # 更确定性
     )
 
     prompt = "写一个关于春天的句子。"
@@ -174,10 +183,11 @@ def example_4_model_parameters():
     print("\n" + "-"*70)
 
     # 创建一个温度较高的模型（更随机）
-    model_creative = init_chat_model(
-        "groq:llama-3.3-70b-versatile",
+    model_creative = ChatOpenAI(
+        model=MODEL_NAME, # type: ignore
+        api_key=API_KEY, # type: ignore
+        base_url=BASE_URL   ,
         temperature=1.5,  # 更有创造性
-        max_tokens=100
     )
 
     print("\n使用 temperature=1.5 (创造性输出):")
@@ -225,6 +235,7 @@ def example_5_response_structure():
         print(f"   提示 tokens: {usage.get('prompt_tokens', 'N/A')}")
         print(f"   完成 tokens: {usage.get('completion_tokens', 'N/A')}")
         print(f"   总计 tokens: {usage.get('total_tokens', 'N/A')}")
+        # 等效 getattr(usage, "total_tokens", "N/A")  # type: ignore
 
 # ============================================================================
 # 示例 6：错误处理
@@ -309,9 +320,9 @@ def main():
 
     try:
         # 运行所有示例
-        example_1_simple_invoke()
-        example_2_messages()
-        example_3_dict_messages()
+        # example_1_simple_invoke()
+        # example_2_messages()
+        # example_3_dict_messages()
         example_4_model_parameters()
         example_5_response_structure()
         example_6_error_handling()
