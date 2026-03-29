@@ -11,6 +11,8 @@ LangChain 1.0 - 自定义工具 (@tool 装饰器)
 import os
 import sys
 
+from langchain_openai import ChatOpenAI
+
 # Windows终端编码支持
 if sys.platform == 'win32':
     import io
@@ -25,23 +27,28 @@ from langchain.chat_models import init_chat_model
 from langchain_core.tools import tool
 
 # 导入自定义工具
-from weather import get_weather
-from calculator import calculator
-from web_search import web_search
+from tools.weather import get_weather
+from tools.calculator import calculator
+from tools.web_search import web_search
 
 # 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+load_dotenv(override=True)
+API_KEY = os.getenv("API_KEY")
+MODEL_NAME = os.getenv("MODEL", "gpt-5.4-mini")
+BASE_URL = os.getenv("BASE_URL", "https://api.groq.com/openai/v1")
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+if not API_KEY or API_KEY == "your_API_KEY_here":
     raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
+        "\n请先在 .env 文件中设置有效的 API_KEY\n"
         "访问 https://console.groq.com/keys 获取免费密钥"
     )
 
 # 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
-
+model = ChatOpenAI(
+    model=MODEL_NAME,
+    api_key=API_KEY, # type: ignore
+    base_url=BASE_URL
+)
 
 
 # ============================================================================

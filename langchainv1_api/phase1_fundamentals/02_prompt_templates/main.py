@@ -23,23 +23,30 @@ from langchain_core.prompts import (
     HumanMessagePromptTemplate,
     AIMessagePromptTemplate
 )
+from langchain_openai import ChatOpenAI
 
 # 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+load_dotenv(override=True)
+API_KEY = os.getenv("API_KEY")
+MODEL_NAME = os.getenv("MODEL", "gpt-5.4-mini")
+BASE_URL = os.getenv("BASE_URL", "https://api.groq.com/openai/v1")
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+if not API_KEY or API_KEY == "your_API_KEY_here":
     raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
+        "\n请先在 .env 文件中设置有效的 API_KEY\n"
         "访问 https://console.groq.com/keys 获取免费密钥"
     )
 
 # 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
+model = ChatOpenAI(
+    model=MODEL_NAME,
+    api_key=API_KEY, # type: ignore
+    base_url=BASE_URL
+)
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here_replace_this":
+if not API_KEY or API_KEY == "your_API_KEY_here_replace_this":
     raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
+        "\n请先在 .env 文件中设置有效的 API_KEY\n"
         "访问 https://console.groq.com/keys 获取免费密钥"
     )
 
@@ -145,7 +152,7 @@ def example_2_prompt_template_basics():
 
     # invoke 直接返回格式化后的值
     prompt_value = template3.invoke({"theme": "春天", "style": "现代"})
-    print(f"生成的提示词：\n{prompt_value.text}\n")
+    print(f"生成的提示词：\n{prompt_value.to_string()}\n")
 
 # ============================================================================
 # 示例 3：ChatPromptTemplate - 聊天消息模板
@@ -382,23 +389,23 @@ def main():
     print("="*70)
 
     try:
-        example_1_why_templates()
-        input("\n按 Enter 继续...")
+        # example_1_why_templates()
+        # input("\n按 Enter 继续...")
 
-        example_2_prompt_template_basics()
-        input("\n按 Enter 继续...")
+        # example_2_prompt_template_basics()
+        # input("\n按 Enter 继续...")
 
-        example_3_chat_prompt_template()
-        input("\n按 Enter 继续...")
+        # example_3_chat_prompt_template()
+        # input("\n按 Enter 继续...")
 
-        example_4_conversation_template()
-        input("\n按 Enter 继续...")
+        # example_4_conversation_template()
+        # input("\n按 Enter 继续...")
 
-        example_5_message_templates()
-        input("\n按 Enter 继续...")
+        # example_5_message_templates()
+        # input("\n按 Enter 继续...")
 
-        example_6_partial_variables()
-        input("\n按 Enter 继续...")
+        # example_6_partial_variables()
+        # input("\n按 Enter 继续...")
 
         example_9_lcel_chains()
 
