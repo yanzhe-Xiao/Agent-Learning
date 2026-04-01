@@ -14,23 +14,21 @@ from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
 from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langchain.agents.middleware import SummarizationMiddleware
 
 # 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+load_dotenv(override=True)
+MODEL = os.getenv("MODEL")
+API_KEY = os.getenv("API_KEY")
+BASE_URL = os.getenv("BASE_URL") 
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-    raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
-        "访问 https://console.groq.com/keys 获取免费密钥"
-    )
-
-# 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
-
-
+model = ChatOpenAI(
+    model=MODEL, # type: ignore
+    api_key=API_KEY, # type: ignore
+    base_url=BASE_URL
+) 
 
 @tool
 def calculator(operation: str, a: float, b: float) -> str:
@@ -68,8 +66,8 @@ def example_1_problem_unlimited_growth():
     config = {"configurable": {"thread_id": "long_conversation"}}
 
     # 模拟多轮对话
-    print("\n模拟 10 轮对话...")
-    for i in range(1, 11):
+    print("\n模拟 5 轮对话...")
+    for i in range(1, 6):
         agent.invoke(
             {"messages": [{"role": "user", "content": f"这是第 {i} 轮对话"}]},
             config=config
@@ -103,6 +101,9 @@ def example_2_summarization_middleware():
     print("示例 2：SummarizationMiddleware - 自动摘要")
     print("="*70)
 
+    model_for_summary = ChatOpenAI(model=os.getenv("MODEL_MINI"),api_key=API_KEY,base_url=BASE_URL)
+    print(model_for_summary.invoke("你好，你是什么模型"))
+
     # 创建带摘要中间件的 Agent
     agent = create_agent(
         model=model,
@@ -111,10 +112,11 @@ def example_2_summarization_middleware():
             checkpointer=InMemorySaver(),
         middleware=[
             SummarizationMiddleware(
-                model="groq:llama-3.3-70b-versatile",
-                max_tokens_before_summary=500  # 超过 500 tokens 就摘要
+                model=model_for_summary,  # 使用更便宜的模型进行摘要
+                trigger=("tokens", 400), # 考虑是否要触发摘要
+                keep=("tokens",200) # 触发后保留多少 tokens 的消息
             )
-        ]
+        ] # 这里如果按照老版本的写法使用 max_tokens_before_summary=200 实测是不可以触发的，如果只有一个参数不能触发，但新版本推荐使用 trigger 和 keep 参数，应该把这两个参数都写上。
     )
 
     config = {"configurable": {"thread_id": "with_summary"}}
@@ -125,6 +127,8 @@ def example_2_summarization_middleware():
         "我在北京工作",
         "我喜欢编程和阅读",
         "我最近在学习 AI",
+        "我想要找一份langchain的工作，你可以介绍一下langchain吗",
+        "你可以搜索一下相关的职位吗？",
         "请总结一下我的信息"
     ]
 
@@ -216,16 +220,16 @@ def example_4_manual_trimming():
 
     print(f"\n原始消息数: {len(messages)}")
 
-    # 只保留最近 4 条消息 
-    # 按 token 数裁剪（不严格条数）	max_tokens=N + 合理 token_counter
-    # 严格保留最后 N 条消息	max_count=N
+    # 当前版本的 trim_messages 不再支持 max_count，只支持 max_tokens。
+    # 如果你要“严格按条数保留最后 N 条”，直接使用切片 messages[-N:]。
+    # 这里为了演示 trim_messages，本例把“每条消息约算作 1 个 token”。
+    message_counter = lambda value: len(value) if isinstance(value, list) else 1
 
     trimmed = trim_messages(
         messages,
-        max_count=5,  # 严格保留最后 5 条消息
-        # max_tokens=100,  # 或使用 token 数限制
+        max_tokens=5,  # 近似保留最后 5 条消息
         strategy="last",  # 保留最后的消息
-        token_counter=len  # 简单计数器（实际应该用 token 计数）这里其实不会被用到，因为 max_count 优先
+        token_counter=message_counter
     )
 
     print(f"修剪后消息数: {len(trimmed)}")
@@ -355,8 +359,8 @@ def main():
     print("="*70)
 
     try:
-        example_1_problem_unlimited_growth()
-        input("\n按 Enter 继续...")
+        # example_1_problem_unlimited_growth()
+        # input("\n按 Enter 继续...")
 
         example_2_summarization_middleware()
         input("\n按 Enter 继续...")

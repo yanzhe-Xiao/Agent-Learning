@@ -18,12 +18,19 @@ LangChain 1.0 - Agent 执行循环（ReAct 模式）
 """
 
 import os
+from pathlib import Path
 import sys
+
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from langchain_openai import ChatOpenAI
 
 # 添加工具目录到路径
 parent_dir = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(parent_dir, '04_custom_tools', 'tools'))
-
+# 直接把 04_custom_tools/tools 加到导入路径，便于复用那里的工具模块
+tools_dir = Path(__file__).resolve().parent.parent / "04_custom_tools" / "tools"
+if str(tools_dir) not in sys.path:
+    sys.path.insert(0, str(tools_dir))
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent  # ✅ LangGraph 预构建 ReAct Agent
@@ -31,17 +38,62 @@ from calculator import calculator
 from weather import get_weather
 
 # 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+load_dotenv(override=True)
+API_KEY = os.getenv("API_KEY")
+MODEL_NAME = os.getenv("MODEL", "gpt-5.4-mini")
+BASE_URL = os.getenv("BASE_URL", "https://api.groq.com/openai/v1")
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+if not API_KEY or API_KEY == "your_API_KEY_here":
     raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
+        "\n请先在 .env 文件中设置有效的 API_KEY\n"
         "访问 https://console.groq.com/keys 获取免费密钥"
     )
 
 # 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
+model = ChatOpenAI(
+    model=MODEL_NAME,
+    api_key=API_KEY, # type: ignore
+    base_url=BASE_URL
+)
+
+
+def _normalize_stream_chunk(chunk):
+    """兼容不同版本的 stream 返回形态。"""
+    if isinstance(chunk, dict) and "type" in chunk and "data" in chunk:
+        return chunk["data"]
+    return chunk
+
+
+def _stringify_content(content):
+    """把 message.content 转成易读文本。"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text:
+                    parts.append(str(text))
+        return "".join(parts)
+    return str(content) if content else ""
+
+
+def _print_message_summary(prefix, message):
+    """打印消息摘要，便于比较不同 stream_mode。"""
+    print(f"{prefix}{message.__class__.__name__}")
+
+    if hasattr(message, "tool_calls") and message.tool_calls:
+        for tool_call in message.tool_calls:
+            print(f"    工具: {tool_call['name']}")
+            print(f"    参数: {tool_call['args']}")
+        return
+
+    content = _stringify_content(getattr(message, "content", ""))
+    if content:
+        print(f"    内容: {content}")
 
 
 
@@ -60,14 +112,15 @@ def example_1_understand_loop():
 
     agent = create_agent(
         model=model,
-        tools=[calculator],
+        tools=[get_weather],
     system_prompt="你是一个有帮助的助手。"
     )
 
     print("\n问题：25 乘以 8 等于多少？")
     response = agent.invoke({
-        "messages": [{"role": "user", "content": "25 乘以 8 等于多少？"}]
+        "messages": [{"role": "user", "content": "上海天气如何？"}]
     })
+    print(type(response))  # response 是一个字典，包含 'messages' 键
 
     print("\n完整消息历史：")
     for i, msg in enumerate(response['messages'], 1):
@@ -103,44 +156,98 @@ def example_1_understand_loop():
 # ============================================================================
 # 示例 2：流式输出（Streaming）
 # ============================================================================
+from langgraph.checkpoint.memory import MemorySaver
 def example_2_streaming():
     """
     示例2：实时查看 Agent 的输出
 
     使用 .stream() 方法
     """
-    print("\n" + "="*70)
-    print("示例 2：流式输出")
-    print("="*70)
-
+    # 创建 Agent (使用 create_react_agent，它是 create_agent 的底层实现)
+    tools = [get_weather, calculator]
+    memory = MemorySaver()
     agent = create_agent(
-        model=model,
-        tools=[calculator, get_weather],
-    system_prompt="你是一个有帮助的助手。"
-    )
+        model,
+        tools,
+        checkpointer=memory,
+        system_prompt="你是一个有帮助的助手。")
 
-    print("\n问题：北京天气如何？然后计算 10 加 20")
-    print("\n流式输出（实时显示）：")
-    print("-" * 70)
+    # 测试消息
+    user_message = "北京天气如何？"
+    config = {"configurable": {"thread_id": "demo-thread"}}
 
-    # 使用 stream 方法
-    for chunk in agent.stream({
-        "messages": [{"role": "user", "content": "北京天气如何？"}]
-    }):
-        # chunk 是字典，包含更新的状态
-        if 'messages' in chunk:
-            # 获取最新的消息
-            latest_msg = chunk['messages'][-1]
+    print("\n" + "="*70)
+    print("演示 stream_mode='values'")
+    print("="*70)
+    for chunk in agent.stream(
+        {"messages": [HumanMessage(content=user_message)]},
+        config=config,
+        stream_mode="values"
+    ):
+        print("\n--- Chunk ---")
+        print("类型:", type(chunk))
+        print("键:", list(chunk.keys()))
+        if "messages" in chunk:
+            last_msg = chunk["messages"][-1]
+            print("最新消息类型:", type(last_msg).__name__)
+            if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
+                print("工具调用:", last_msg.tool_calls)
+            elif isinstance(last_msg, ToolMessage):
+                print("工具结果:", last_msg.content)
+            elif isinstance(last_msg, AIMessage) and last_msg.content:
+                print("最终回答:", last_msg.content)
 
-            # 如果是 AI 的最终回答
-            if hasattr(latest_msg, 'content') and latest_msg.content:
-                if not hasattr(latest_msg, 'tool_calls') or not latest_msg.tool_calls:
-                    print(f"\n最终回答: {latest_msg.content}")
+    print("\n" + "="*70)
+    print("演示 stream_mode='updates'")
+    print("="*70)
+    for chunk in agent.stream(
+        {"messages": [HumanMessage(content="10 加 20 等于多少？")]},
+        config=config,
+        stream_mode="updates"
+    ):
+        print("\n--- Chunk ---")
+        print("类型:", type(chunk))
+        print("内容:", chunk)  # 直接打印更新字典
+        # 解析更新内容
+        for node_name, node_output in chunk.items():
+            print(f"  节点 {node_name}:")
+            if "messages" in node_output:
+                msgs = node_output["messages"]
+                if msgs:
+                    print(f"    消息数量: {len(msgs)}")
+                    for msg in msgs:
+                        print(f"      {type(msg).__name__}: {msg.content if msg.content else '(工具调用)'}")
 
-    print("\n关键点：")
-    print("  - stream() 返回生成器，逐步返回结果")
-    print("  - 用于实时显示进度")
-    print("  - 适合长时间运行的任务")
+    print("\n" + "="*70)
+    print("演示 stream_mode='messages'")
+    print("="*70)
+    for msg, metadata in agent.stream(
+        {"messages": [HumanMessage(content="北京天气如何？")]},
+        config=config,
+        stream_mode="messages"
+    ):
+        print("\n--- 消息元组 ---")
+        print("消息类型:", type(msg).__name__)
+        print("消息内容:", msg.content if hasattr(msg, 'content') else "(无内容)")
+        if isinstance(msg, AIMessage) and msg.tool_calls:
+            print("工具调用:", msg.tool_calls)
+        print("元数据:", metadata)
+
+    print("\n" + "="*70)
+    print("演示 stream_mode='debug'")
+    print("="*70)
+    for chunk in agent.stream(
+        {"messages": [HumanMessage(content="北京天气如何？")]},
+        config=config,
+        stream_mode="debug"
+    ):
+        print("\n--- Debug Chunk ---")
+        # debug 模式输出的是完整的调试事件对象，包含很多信息
+        print("类型:", type(chunk))
+        print("键:", chunk.keys())
+        print("type:", chunk.get("type"))
+        if "payload" in chunk:
+            print("payload 包含:", list(chunk["payload"].keys()))
 
 # ============================================================================
 # 示例 3：多步骤执行
@@ -165,7 +272,7 @@ def example_3_multi_step():
     response = agent.invoke({
         "messages": [{"role": "user", "content": "先算 10 加 20，然后把结果乘以 3"}]
     })
-
+    print(response)  # 打印完整响应，包含所有消息
     # 统计工具调用次数
     tool_calls_count = 0
     for msg in response['messages']:
@@ -205,7 +312,7 @@ def example_4_inspect_state():
     step = 0
     for chunk in agent.stream({
         "messages": [{"role": "user", "content": "100 除以 5 等于多少？"}]
-    }):
+    },stream_mode="values"):
         step += 1
         print(f"\n步骤 {step}:")
 
@@ -355,11 +462,11 @@ def main():
     print("="*70)
 
     try:
-        example_1_understand_loop()
-        input("\n按 Enter 继续...")
+        # example_1_understand_loop()
+        # input("\n按 Enter 继续...")
 
-        example_2_streaming()
-        input("\n按 Enter 继续...")
+        # example_2_streaming()
+        # input("\n按 Enter 继续...")
 
         example_3_multi_step()
         input("\n按 Enter 继续...")

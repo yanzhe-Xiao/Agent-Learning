@@ -93,34 +93,219 @@ print(f"使用的工具: {used_tools}")
 
 ## 流式输出（Streaming）
 
-**用于实时显示 Agent 的进度**
+用于实时显示 Agent 的执行进度和输出。
+
+`stream()` 返回一个生成器，每次产生一个数据块 `chunk`，代表执行过程中的一次更新。  
+通过 `stream_mode` 参数，可以控制每个 `chunk` 里包含什么内容。
 
 ### 基本用法
 
 ```python
-agent = create_agent(model=model, tools=tools)
+from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import HumanMessage
 
-# 使用 .stream() 方法
-for chunk in agent.stream({"messages": [...]}):
-    # chunk 是状态更新
-    if 'messages' in chunk:
-        latest_msg = chunk['messages'][-1]
-        # 处理最新消息
-        print(latest_msg.content)
+agent = create_react_agent(model, tools)
+
+for chunk in agent.stream(
+    {"messages": [HumanMessage(content="北京天气如何？")]},
+    config={"configurable": {"thread_id": "demo-thread"}},
+):
+    print(chunk)
 ```
 
-### 实时显示最终答案
+### 支持的 Stream Mode
+
+| 模式 | 返回内容 | 适用场景 |
+| --- | --- | --- |
+| `"values"` | 每一步执行后的完整状态 | 需要查看完整 `messages` 历史 |
+| `"updates"` | 当前步骤的增量更新 | 只关心哪个节点更新了什么 |
+| `"messages"` | `(message, metadata)` 元组 | 实现逐字打印、流式聊天 |
+| `"debug"` | 详细调试事件 | 排查执行流程问题 |
+
+### 使用说明
+
+- 如果你想直接读取 `chunk["messages"]`，优先显式传 `stream_mode="values"`。
+- `updates` 更适合观察 `model`、`tools` 等节点分别返回了什么。
+- `messages` 更适合做打字机式输出，因为它会按消息片段或 token 流式返回。
+
+### 各模式详解与示例
+
+下面用“查询天气”的例子说明不同模式下 `chunk` 的结构。
+
+### 1. `stream_mode="values"`
+
+每次返回完整的当前状态字典。随着 Agent 继续执行，`messages` 列表会不断变长。
 
 ```python
-for chunk in agent.stream(input):
-    if 'messages' in chunk:
-        latest = chunk['messages'][-1]
-
-        # 只显示最终答案（不包含 tool_calls）
-        if hasattr(latest, 'content') and latest.content:
-            if not hasattr(latest, 'tool_calls') or not latest.tool_calls:
-                print(latest.content)
+for chunk in agent.stream(
+    {"messages": [HumanMessage(content="北京天气如何？")]},
+    stream_mode="values",
+):
+    print(chunk)
 ```
+
+输出示例：
+
+```text
+--- Chunk 1 ---
+{'messages': [HumanMessage(content='北京天气如何？')]}
+
+--- Chunk 2 ---
+{'messages': [HumanMessage(...), AIMessage(tool_calls=[...])]}
+
+--- Chunk 3 ---
+{'messages': [HumanMessage(...), AIMessage(...), ToolMessage(content='晴天，温度 15°C，空气质量良好')]}
+
+--- Chunk 4 ---
+{'messages': [..., AIMessage(content='北京现在是晴天，温度 15°C，空气质量良好。')]}
+```
+
+特点：
+
+- 每个 `chunk` 都是完整状态，通常至少包含 `messages`。
+- 可以通过 `chunk["messages"][-1]` 读取当前最新消息。
+- 最适合教学、调试，以及实时展示完整对话列表。
+
+### 2. `stream_mode="updates"`
+
+只返回当前步骤中发生变化的节点输出，键通常是节点名，值是该节点本次新增的状态片段。
+
+```python
+for chunk in agent.stream(
+    {"messages": [HumanMessage(content="10 加 20 等于多少？")]},
+    stream_mode="updates",
+):
+    print(chunk)
+```
+
+输出示例：
+
+```text
+--- Chunk 1 ---
+{'model': {'messages': [AIMessage(tool_calls=[...])]}}
+
+--- Chunk 2 ---
+{'tools': {'messages': [ToolMessage(content='10.0 add 20.0 = 30.0')]}}
+
+--- Chunk 3 ---
+{'model': {'messages': [AIMessage(content='10 加 20 等于 30。')]}}
+```
+
+特点：
+
+- 结构通常是 `{节点名: {更新内容}}`。
+- 可以精确看到是 `model` 还是 `tools` 节点产生了更新。
+- 更适合按节点做监控、日志记录和增量处理。
+
+### 3. `stream_mode="messages"`
+
+直接返回 `(message, metadata)` 元组。  
+其中 `message` 是消息对象或消息片段，`metadata` 里通常会包含 `langgraph_node` 等信息。
+
+```python
+for msg, metadata in agent.stream(
+    {"messages": [HumanMessage(content="北京天气如何？")]},
+    stream_mode="messages",
+):
+    print(f"消息: {msg.content}, 元数据: {metadata}")
+```
+
+输出示例：
+
+```text
+消息: (空), 元数据: {'langgraph_node': 'model', ...}
+消息: 晴天，温度 15°C，空气质量良好, 元数据: {'langgraph_node': 'tools', ...}
+消息: 北京, 元数据: {'langgraph_node': 'model', ...}
+消息: 现在, 元数据: {...}
+消息: 是, 元数据: {...}
+消息: 晴天，元数据: {...}
+...
+```
+
+特点：
+
+- 每产生一个消息片段，就会立即返回一次。
+- 对于 `AIMessageChunk`，`content` 往往只是最终回答的一部分。
+- 非常适合实现类似 ChatGPT 的逐字输出效果。
+
+注意：
+
+- 当模型决定调用工具时，可能先返回一个没有可见 `content`、但包含 `tool_calls` 的消息。
+- 因此做前端展示时，不能只按 `content` 是否为空来判断是否“没有事件”。
+
+### 4. `stream_mode="debug"`
+
+返回详细调试事件。每个 `chunk` 会包含更丰富的执行过程信息，适合排查图执行流程。
+
+```python
+for chunk in agent.stream(
+    {"messages": [HumanMessage(content="北京天气如何？")]},
+    stream_mode="debug",
+):
+    print(chunk)
+```
+
+输出示例：
+
+```text
+--- Debug Chunk ---
+type: checkpoint
+payload 包含: ['config', 'values', 'metadata', 'next', ...]
+
+--- Debug Chunk ---
+type: task
+payload 包含: ['id', 'name', 'input', ...]
+
+--- Debug Chunk ---
+type: task_result
+payload 包含: ['id', 'result', ...]
+```
+
+特点：
+
+- 数据量最大，只适合开发和调试阶段。
+- 可以按 `type` 过滤你关心的事件，例如 `checkpoint`、`task`、`task_result`。
+- 适合排查“为什么某个节点没执行”或“工具调用过程发生了什么”。
+
+### 实际应用建议
+
+- 实现聊天界面：使用 `messages` 模式，逐字打印 AI 回复。
+- 记录完整对话：使用 `values` 模式，保存完整 `messages`。
+- 监控特定节点：使用 `updates` 模式，只记录 `tools` 或 `model` 节点输出。
+- 调试复杂流程：使用 `debug` 模式，查看完整执行事件。
+
+### 完整示例代码
+
+```python
+from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import HumanMessage
+from langchain_core.messages.ai import AIMessageChunk
+from langchain_core.tools import tool
+
+
+@tool
+def get_weather(city: str) -> str:
+    return f"{city} 现在是晴天，温度 25°C。"
+
+
+tools = [get_weather]
+agent = create_react_agent(model, tools)
+
+print("=" * 40)
+print("流式输出（逐字）")
+print("=" * 40)
+
+for msg, metadata in agent.stream(
+    {"messages": [HumanMessage(content="北京天气如何？")]},
+    stream_mode="messages",
+):
+    if isinstance(msg, AIMessageChunk) and msg.content:
+        print(msg.content, end="", flush=True)
+
+print("\n")
+```
+
+通过选择合适的 `stream_mode`，可以灵活控制流式输出的粒度，满足从教学演示到生产环境的不同需求。
 
 ### stream vs invoke
 

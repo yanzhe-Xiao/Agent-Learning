@@ -15,10 +15,14 @@ LangChain 1.0 - Simple Agent (使用 create_agent)
 
 import os
 import sys
+from pathlib import Path
 
-# 添加父目录到路径以导入工具
-parent_dir = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, os.path.join(parent_dir, '04_custom_tools', 'tools'))
+from langchain_openai import ChatOpenAI
+
+# 直接把 04_custom_tools/tools 加到导入路径，便于复用那里的工具模块
+tools_dir = Path(__file__).resolve().parent.parent / "04_custom_tools" / "tools"
+if str(tools_dir) not in sys.path:
+    sys.path.insert(0, str(tools_dir))
 
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
@@ -31,18 +35,23 @@ from calculator import calculator
 from web_search import web_search
 
 # 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+load_dotenv(override=True)
+API_KEY = os.getenv("API_KEY")
+MODEL_NAME = os.getenv("MODEL", "gpt-5.4-mini")
+BASE_URL = os.getenv("BASE_URL", "https://api.groq.com/openai/v1")
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
+if not API_KEY or API_KEY == "your_API_KEY_here":
     raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
+        "\n请先在 .env 文件中设置有效的 API_KEY\n"
         "访问 https://console.groq.com/keys 获取免费密钥"
     )
 
 # 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
-
+model = ChatOpenAI(
+    model=MODEL_NAME,
+    api_key=API_KEY, # type: ignore
+    base_url=BASE_URL
+)
 
 
 # ============================================================================

@@ -29,6 +29,7 @@ prompt = ChatPromptTemplate.from_template(
 
 # 预先注入格式指令（项目中避免重复传递，提升链式调用效率）
 print(parse.get_format_instructions())  # 打印格式指令，验证内容（项目中可用于调试或日志记录）
+# pydantic_object=UserInfo 这个会自动生成一个格式指令，告诉大模型输出必须符合UserInfo模型的结构要求（如字段名称、类型等），确保大模型输出的内容可以被正确解析为UserInfo实例。通过partial方法将这个格式指令预先注入到提示词模板中，后续链式调用时就不需要每次都传递format_instructions参数了，提升了代码的简洁性和执行效率。
 prompt = prompt.partial(format_instructions = parse.get_format_instructions())
 
 # 4. 构建LCEL链式调用（项目中标准化流程：提示词→大模型→结构化解析）

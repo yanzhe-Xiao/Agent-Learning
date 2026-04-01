@@ -1,67 +1,40 @@
-"""
-简单测试：验证内存功能
-"""
+# 学习InMemorySaver
 
-import os
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
+import dotenv
 from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+
+
+dotenv.load_dotenv(override=True)
+import os
+MODEL = os.getenv("MODEL")
+API_KEY = os.getenv("API_KEY")
+BASE_URL = os.getenv("BASE_URL") 
+
+model = ChatOpenAI(
+    model=MODEL, # type: ignore
+    api_key=API_KEY, # type: ignore
+    base_url=BASE_URL
+) 
 from langgraph.checkpoint.memory import InMemorySaver
 
-# 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+memory = InMemorySaver()
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-    raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
-        "访问 https://console.groq.com/keys 获取免费密钥"
-    )
-
-# 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
-
-
-
-print("=" * 70)
-print("测试：InMemorySaver 内存功能")
-print("=" * 70)
-
-# 创建带内存的 Agent
 agent = create_agent(
     model=model,
     tools=[],
-    system_prompt="你是一个有帮助的助手。",
-            checkpointer=InMemorySaver()
+    system_prompt="你是一个有用的助手，帮助用户记住一些信息。",
+    checkpointer=memory
 )
 
-config = {"configurable": {"thread_id": "test_session"}}
+message = HumanMessage(content="你好，我叫小明。")
+config = {"configurable":{"thread_id": "1"}}
+res = agent.invoke({"messages": [message]},config=config) # type: ignore
+print(res['messages'][-1].content)
+# 再次调用agent，看看之前的信息是否被记住了
+message = HumanMessage(content="你还记得我叫什么名字吗？")
+res = agent.invoke({"messages": [message]},config=config) # type: ignore
+print(res['messages'][-1].content)
 
-print("\n第一轮对话：")
-print("用户: 我叫张三")
-response1 = agent.invoke(
-    {"messages": [{"role": "user", "content": "我叫张三"}]},
-    config=config
-)
-print(f"Agent: {response1['messages'][-1].content}")
-
-print("\n第二轮对话：")
-print("用户: 我叫什么？")
-response2 = agent.invoke(
-    {"messages": [{"role": "user", "content": "我叫什么？"}]},
-    config=config
-)
-print(f"Agent: {response2['messages'][-1].content}")
-
-print("\n" + "=" * 70)
-print("内存状态：")
-print(f"  总消息数: {len(response2['messages'])}")
-print(f"  thread_id: {config['configurable']['thread_id']}")
-print("=" * 70)
-
-if "张三" in response2['messages'][-1].content:
-    print("\n测试成功！Agent 记住了名字。")
-else:
-    print("\n警告：Agent 可能没有正确记住")
-
-print("\n测试完成！")
+print(memory.get_tuple(config=config)) # pyright: ignore[reportArgumentType]
