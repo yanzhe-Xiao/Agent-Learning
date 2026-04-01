@@ -90,7 +90,10 @@ agent = create_agent(
     middleware=[
         SummarizationMiddleware(
             model="groq:llama-3.3-70b-versatile",
-            max_tokens_before_summary=800  # 适合客服
+            trigger=("tokens",1000),
+            keep=("tokens",300)
+            # trigger=("fraction", 0.8),           # ← 关键改动：使用模型最大上下文的 80%
+            # keep=("fraction", 0.3),              # ← 推荐同时改 keep：保留最近 30% 的上下文
         )
     ]
 )

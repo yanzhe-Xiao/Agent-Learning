@@ -12,3 +12,4 @@ langchain_classic
 pymysql
 unstructured
 python-docx
+langgraph-checkpoint-redis

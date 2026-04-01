@@ -6,22 +6,21 @@ import os
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langchain_core.messages import BaseMessage
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.redis import RedisSaver  
 
-# 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-    raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
-        "访问 https://console.groq.com/keys 获取免费密钥"
-    )
-
-# 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
-
-
+load_dotenv(override=True)
+model_name = os.getenv("MODEL")
+api_key = os.getenv("API_KEY")
+base_url = os.getenv("BASE_URL")
+model_mini = os.getenv("MODEL_MINI")
+model = ChatOpenAI(
+    model=model_name,
+    api_key=api_key,
+    base_url=base_url,
+)
+print(os.getenv("REDIS_URL"))
 
 def demo_long_conversation():
     """
@@ -31,9 +30,8 @@ def demo_long_conversation():
     print(" 演示：对话历史过长的性能问题")
     print("="*70)
 
-    db_path = "long_conversation.sqlite"
-
-    with SqliteSaver.from_conn_string(f"sqlite:///{db_path}") as checkpointer:
+    with RedisSaver.from_conn_string(os.getenv("REDIS_URL")) as checkpointer:
+        checkpointer.setup()
         agent = create_agent(
             model=model,
             tools=[],
@@ -44,21 +42,26 @@ def demo_long_conversation():
         config = {"configurable": {"thread_id": "test_user"}}
 
         # 模拟 50 轮对话
-        print("\n[模拟 50 轮对话...]")
-        for i in range(1, 51):
-            agent.invoke(
-                {"messages": [{"role": "user", "content": f"这是第 {i} 条消息"}]},
-                config=config
-            )
-            if i % 10 == 0:
-                print(f"  已完成 {i} 轮...")
+        print("\n[模拟 5 轮对话...]")
+        # for i in range(1, 6):
+        #     agent.invoke(
+        #         {"messages": [{"role": "user", "content": f"hello,can u tell me the current time? This is round {i}."}]},
+        #         config=config
+        #     )
+        #     if i % 10 == 0:
+        #         print(f"  已完成 {i} 轮...")
 
         print("\n[尝试获取状态，查看加载的消息数量...]")
 
-        # 获取当前状态
-        state = checkpointer.get(config)
+        # === 关键修复 ===
+        state = agent.get_state(config)          # ← 改成 agent.get_state，而不是 checkpointer.get
         if state and state.values:
             messages = state.values.get("messages", [])
+            from langchain_core.messages import HumanMessage, AIMessage
+            human_messages = [msg.content for msg in messages if isinstance(msg, HumanMessage)]
+            ai_messages = [msg.content for msg in messages if isinstance(msg, AIMessage)]
+            print(list(zip(human_messages, ai_messages)))
+            print(list(msg.content for msg in messages if isinstance(msg, BaseMessage)))
             print(f"\n⚠️ 当前加载的消息数量：{len(messages)}")
             print(f"⚠️ 这意味着每次 invoke 都会加载这么多消息！")
 
@@ -73,10 +76,9 @@ def demo_long_conversation():
             print("  3. 性能下降，响应变慢")
             print("  4. Token 费用增加")
 
-    # 清理
-    if os.path.exists(db_path):
-        os.remove(db_path)
-        print(f"\n[已清理测试数据库]")
+    is_clean = input("\n是否清理测试数据？(y/n): ").strip().lower() == 'y'
+    if is_clean:
+        checkpointer.delete_thread("test_user")  # 清理测试数据
 
 def show_solutions():
     """
