@@ -19,3 +19,4 @@ langchain-huggingface
 langchain-pinecone 
 pinecone-client
 langchain-groq
+rank_bm25

@@ -441,6 +441,7 @@ def example_6_rag_agent_hybrid(ensemble_retriever):
             print(f"回答: {response['messages'][-1].content}\n")
         except Exception as e:
             print(f"[错误] 查询失败（Groq 工具调用问题）\n")
+            print(e)
         print("-" * 70 + "\n")
 
     print("关键点:")

@@ -494,3 +494,192 @@ def run_tests(retriever):
 5. **生产就绪** - 监控、缓存、容错
 
 混合检索是现代 RAG 系统的标准配置，能显著提升检索质量和鲁棒性！
+
+
+
+
+
+RRF，全称是倒数排序融合（Reciprocal Rank Fusion），它是一种在RAG系统中用来整合多个不同检索结果的关键算法。它的核心是**不看分数看排名**。
+
+当我们同时使用关键词搜索（如BM25）和向量搜索等多种检索方式时，RRF能巧妙地将它们各自给出的排名融合成一个更优的新排名[reference:0][reference:1]。
+
+### 🤔 为什么要用RRF？解决不同分数的“不可比”难题
+
+不同的检索方法产生的分数“单位”完全不同，直接比较就像“苹果和桔子”：
+*   **关键词搜索**：返回的是基于词频统计的分数，比如 **12.4**[reference:2]。
+*   **向量搜索**：返回的是基于语义相似度的距离，比如 **0.85**[reference:3]。
+RRF的巧妙之处在于**完全忽略这些无法直接比较的原始分数，只看每个文档在各自结果列表里的排名位置**，从而避免了复杂的分数归一化处理[reference:4][reference:5]。
+
+### 🧮 RRF公式详解：排名越高，贡献越大
+
+RRF通过一个简单的公式计算每个文档的最终得分：得分越高的文档，最终排名越靠前[reference:6]。
+
+> **公式**: `Score(d) = Σ 1 / (k + rank_i(d))`
+
+公式里的关键部分含义如下：
+*   **`rank_i(d)`**: 文档`d`在第`i`个检索结果列表中的**排名**[reference:7][reference:8]。如果某个列表里没有这个文档，该项贡献就是`0`[reference:9]。
+*   **`k` (平滑常数)**: 一个重要的**调和参数**，通常取值为 **60**[reference:10][reference:11][reference:12]。它起到“平衡器”的作用，避免排名非常靠后的文档贡献值几乎为零，也让排名第一的文档不至于有压倒性优势。
+
+### 💡 RRF算法示例演算
+
+假设我们有两个检索结果列表，需要将它们融合[reference:13]：
+*   **列表 A (关键词检索)**: 1. Doc1, 2. Doc2, 3. Doc3
+*   **列表 B (向量检索)**: 1. Doc2, 2. Doc4, 3. Doc1
+**参数 `k=60`**。
+
+计算每个文档的RRF得分（保留五位小数）：
+
+1.  **Doc1**: 在A中排名第1，在B中排名第3。
+    *   得分 = `1/(60+1) + 1/(60+3)` = `1/61 + 1/63` ≈ `0.01639 + 0.01587` = **0.03226**
+
+2.  **Doc2**: 在A中排名第2，在B中排名第1。
+    *   得分 = `1/(60+2) + 1/(60+1)` = `1/62 + 1/61` ≈ `0.01613 + 0.01639` = **0.03252**
+
+3.  **Doc3**: 仅在A中排名第3。
+    *   得分 = `1/(60+3)` = `1/63` ≈ **0.01587**
+
+4.  **Doc4**: 仅在B中排名第2。
+    *   得分 = `1/(60+2)` = `1/62` ≈ **0.01613**
+
+最终，按得分从高到低排序，融合后的新排名为：
+**1. Doc2 (0.03252) → 2. Doc1 (0.03226) → 3. Doc4 (0.01613) → 4. Doc3 (0.01587)**
+Doc2因其在两个列表中均排名靠前而胜出，这体现了RRF“求共识”的核心思想[reference:14]。
+
+### ⚖️ `k`值的“平衡”艺术
+
+`k`值的选择会直接影响融合结果：
+*   **较小的 `k` (如 1~10)**：会**极度放大**排名第一的优势，提升精准度，但风险是容易让某个检索器的“偏见”主导结果[reference:15]。
+*   **较大的 `k` (推荐 60)**：会**鼓励共识**，一个文档如果在多个检索器中表现都不错，会比只在某个检索器中排第一的文档得分更高，提升结果的召回率和鲁棒性[reference:16]。
+
+### ✨ RRF在RAG系统中的优势
+
+RRF的优势契合了RAG系统对高质量检索的追求[reference:17][reference:18]：
+*   **无需分数归一化**：直接绕过了分数不可比的核心难题。
+*   **实现简单且鲁棒**：计算逻辑清晰，不易受单一检索器异常分数的影响。
+*   **追求共识更可靠**：融合多路信息，找到各方都认可的文档，综合结果更稳定、可靠。
+
+### ⚙️ RRF的演进与变体
+
+基础的RRF也有一些改进方向：
+*   **加权RRF**：允许为不同检索器设置不同的权重。例如，当明确查询需要精确匹配关键词时，可给予BM25检索器更高的权重[reference:19][reference:20]。
+*   **处理无结果项**：对于未出现在某个检索列表中的文档，标准做法是贡献为0，这等价于将其排名视为无穷大[reference:21]。
+
+### 💎 总结：为什么RAG需要RRF？
+
+简单来说，RRF通过**“共识”**的力量，解决了多路检索结果“无法比较”的难题，以极低的成本显著提升了RAG系统检索阶段的**准确性和鲁棒性**，从而为后续的答案生成提供了更可靠的事实基础，有效减少“胡说八道”的可能。
+
+
+
+
+
+在 LangChain 的新版本里，官方的 `EnsembleRetriever` 确实移到了 `langchain-classic` 包中[reference:0]。不过，实现 RRF 算法最简单、最可靠的方式，其实还是直接使用 `langchain-classic` 包。这样做能保证代码的稳定性和未来的兼容性。
+
+## 🛠️ 方案一：使用 langchain-classic（推荐）
+
+这是官方推荐的方式，能直接复用成熟的 `EnsembleRetriever`，同时确保未来升级时的兼容性。
+
+### 安装与导入
+
+```bash
+pip install langchain langchain-classic
+```
+
+```python
+from langchain_classic.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
+from langchain_community.vectorstores import FAISS
+from langchain_openai import OpenAIEmbeddings
+from langchain_core.documents import Document
+```
+
+### 代码实现
+
+```python
+# 1. 准备文档
+documents = [
+    Document(page_content="笨笨是一只很喜欢睡觉的猫咪"),
+    Document(page_content="我喜欢在夜晚听音乐，这让我感到放松。"),
+    # ... 更多文档
+]
+
+# 2. 构建关键词检索器 (BM25)
+bm25_retriever = BM25Retriever.from_documents(documents)
+bm25_retriever.k = 4
+
+# 3. 构建语义检索器 (FAISS)
+embeddings = OpenAIEmbeddings()
+faiss_db = FAISS.from_documents(documents, embeddings)
+faiss_retriever = faiss_db.as_retriever(search_kwargs={"k": 4})
+
+# 4. 构建集成检索器，使用 RRF 算法融合
+ensemble_retriever = EnsembleRetriever(
+    retrievers=[bm25_retriever, faiss_retriever],
+    weights=[0.5, 0.5],   # 为每个检索器分配权重
+    c=60                  # RRF 算法中的平滑常数，默认是 60
+)
+```
+
+## ⚙️ 方案二：自定义实现 RRF（学习或轻量级场景）
+
+如果确实不想依赖 `langchain-classic`，也可以自己实现 RRF 算法。这种方式更轻量，也方便你理解 RRF 的内部机制。
+
+### 实现思路
+
+```python
+from typing import List, Dict, Any
+from collections import defaultdict
+
+def reciprocal_rank_fusion(
+    results_list: List[List[Document]], 
+    weights: List[float] = None, 
+    k: int = 60
+) -> List[Document]:
+    """对多个检索器的结果进行 RRF 融合"""
+    # 初始化得分字典和权重
+    scores = defaultdict(float)
+    if weights is None:
+        weights = [1.0] * len(results_list)
+    
+    # 遍历每个检索器的结果
+    for i, results in enumerate(results_list):
+        weight = weights[i]
+        # 计算每个文档的 RRF 得分
+        for rank, doc in enumerate(results, start=1):
+            # 使用 page_content 作为唯一标识
+            doc_id = doc.page_content
+            scores[doc_id] += weight / (k + rank)
+    
+    # 根据得分排序并返回文档列表
+    sorted_doc_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
+    
+    # 恢复完整的 Document 对象（需要维护一个 id -> Document 的映射）
+    # 此处为简化代码，建议在实际使用时维护一个映射表
+    return [doc for doc_id in sorted_doc_ids for doc in results_list[0] if doc.page_content == doc_id]
+
+# 使用示例
+results_1 = bm25_retriever.get_relevant_documents("query")
+results_2 = faiss_retriever.get_relevant_documents("query")
+fused_results = reciprocal_rank_fusion([results_1, results_2], weights=[0.5, 0.5])
+```
+
+### 关键细节：识别唯一文档
+
+RRF 算法需要一个稳定、唯一的标识符来区分文档，并将来自不同检索器的结果正确合并。使用 `page_content` 作为标识符是最简单的方法，但可能会因为重复或相似内容导致误判。更稳妥的做法是提前为每个文档分配一个全局唯一的 `id` 字段。
+
+```python
+def get_doc_id(doc: Document) -> str:
+    # 优先使用 metadata 中的 id 字段
+    if doc.metadata and doc.metadata.get('id'):
+        return doc.metadata['id']
+    # 回退到 page_content
+    return doc.page_content
+```
+
+## 💎 总结：两种方案的对比与选择
+
+| 方案                         | 优点                               | 缺点                                 |
+| :--------------------------- | :--------------------------------- | :----------------------------------- |
+| **使用 `langchain-classic`** | 官方维护，功能完善，代码简洁       | 需要多安装一个包，但这是最稳妥的选择 |
+| **自定义实现 RRF**           | 无额外依赖，完全可控，便于理解算法 | 需要自行处理文档去重、权重等细节     |
+
+总的来说，**推荐使用 `langchain-classic`**，因为它能让你在 LangChain 1.0 的新架构下，用最少的代码实现功能，并且能获得官方的长期支持。自定义实现则更适合学习研究，或在极简环境下临时使用。
