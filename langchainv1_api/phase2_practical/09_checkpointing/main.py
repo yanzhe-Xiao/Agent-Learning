@@ -30,20 +30,20 @@ from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent  # ✅ LangGraph 预构建图
 from langchain_core.tools import tool
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.mysql.pymysql import PyMySQLSaver
+load_dotenv(override=True)
+model_name = os.getenv("MODEL")
+api_key = os.getenv("API_KEY")
+base_url = os.getenv("BASE_URL")
+model_mini = os.getenv("MODEL_MINI")
+model = ChatOpenAI(
+    model=model_name,
+    api_key=api_key,
+    base_url=base_url,
+)
 
-# 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-    raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
-        "访问 https://console.groq.com/keys 获取免费密钥"
-    )
-
-# 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
+db_url = os.getenv("MYSQL_URL")
 
 
 
@@ -120,24 +120,29 @@ def example_2_sqlite_saver():
     print("="*70)
 
     # 创建持久化的 checkpointer（使用 with 语句）
-    db_path = "checkpoints.sqlite"  # 相对路径
+    # db_path = "checkpoints.sqlite"  # 相对路径
 
-    with SqliteSaver.from_conn_string(db_path) as checkpointer:
+    with PyMySQLSaver.from_conn_string(db_url or "") as checkpointer:
+        checkpointer.setup()
         agent = create_agent(
             model=model,
             tools=[],
             system_prompt="你是一个有帮助的助手。",
             checkpointer=checkpointer  # 使用 SQLite 持久化
         )
-
         config = {"configurable": {"thread_id": "persistent_session"}}
+        state = agent.get_state(config=config)
+        if state and state.values:
+            checkpointer.delete_thread(config["configurable"]["thread_id"])
+
 
         print("\n第一轮对话：")
         print("用户: 我叫李四")
-        agent.invoke(
+        res = agent.invoke(
             {"messages": [{"role": "user", "content": "我叫李四"}]},
             config=config
         )
+        print(f"Agent: {res['messages'][-1].content}")
 
         print("\n第二轮对话：")
         print("用户: 我叫什么？")
@@ -148,7 +153,7 @@ def example_2_sqlite_saver():
         print(f"Agent: {response['messages'][-1].content}")
 
         print(f"\n关键点：")
-        print(f"  ✅ 对话保存到文件：{db_path}")
+        print(f"  ✅ 对话保存到文件：{db_url}")
         print("  ✅ 程序重启后仍可恢复")
         print("  ✅ 可以跨进程访问")
         print("  ✅ 适合生产环境")
@@ -171,7 +176,8 @@ def example_3_verify_persistence():
     # 模拟"重新启动"：创建新的 agent 和 checkpointer
     print("\n[模拟程序重启...]")
 
-    with SqliteSaver.from_conn_string(db_path) as checkpointer:
+    with PyMySQLSaver.from_conn_string(db_url or "") as checkpointer:
+        checkpointer.setup()
         agent = create_agent(
             model=model,
             tools=[],
@@ -210,7 +216,8 @@ def example_4_multi_user_sessions():
 
     db_path = "multi_user.sqlite"
 
-    with SqliteSaver.from_conn_string(db_path) as checkpointer:
+    with PyMySQLSaver.from_conn_string(db_url or "") as checkpointer:
+        checkpointer.setup()
         agent = create_agent(
             model=model,
             tools=[],
@@ -274,7 +281,8 @@ def example_5_tools_with_persistence():
 
     db_path = "tools.sqlite"
 
-    with SqliteSaver.from_conn_string(db_path) as checkpointer:
+    with PyMySQLSaver.from_conn_string(db_url or "") as checkpointer:
+        checkpointer.setup()
         agent = create_agent(
             model=model,
             tools=[get_order_status],
@@ -320,7 +328,8 @@ def example_6_customer_service():
 
     db_path = "customer_service.sqlite"
 
-    with SqliteSaver.from_conn_string(db_path) as checkpointer:
+    with PyMySQLSaver.from_conn_string(db_url or "") as checkpointer:
+        checkpointer.setup()
         agent = create_agent(
             model=model,
             tools=[get_order_status],
@@ -424,8 +433,8 @@ def main():
     print("="*70)
 
     try:
-        example_1_inmemory_limitation()
-        input("\n按 Enter 继续...")
+        # example_1_inmemory_limitation()
+        # input("\n按 Enter 继续...")
 
         example_2_sqlite_saver()
         input("\n按 Enter 继续...")

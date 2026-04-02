@@ -154,6 +154,7 @@ result = structured_llm.invoke("阿里巴巴在杭州滨江区")
 ### 传统方式 vs 结构化输出
 
 **传统方式（繁琐）**：
+
 ```python
 # 1. 提示词要求 JSON
 prompt = "以JSON格式返回：{name, age, occupation}"
@@ -386,3 +387,121 @@ class Bad(BaseModel):
 ## 下一步
 
 **12_validation_retry** - 学习如何验证提取结果并处理错误重试
+
+
+
+
+
+# 对于Agent而言
+
+**✅ 问题根源已定位**（非常经典的报错）
+
+你的代码在这一行出了问题：
+
+```python
+model = model.with_structured_output(WeatherInfo)   # ← 这里
+```
+
+执行完这行后，`model` 已经**不再是原来的 `ChatOpenAI` 对象**，而变成了 `RunnableSequence`（模型 + 输出解析器组成的链）。  
+而 `create_agent`（底层是 LangGraph）在构建 Agent 时会自动调用 `model.bind_tools(tools)` 来绑定工具，`RunnableSequence` 没有 `bind_tools` 方法，所以报错：
+
+```
+AttributeError: 'RunnableSequence' object has no attribute 'bind_tools'
+```
+
+这是 **with_structured_output + Agent** 结合时的常见冲突。
+
+---
+
+**正确做法（2026 年官方推荐）**
+
+不要把 `with_structured_output` 直接套在传给 Agent 的 model 上。  
+而是使用 **`create_agent` 的 `response_format` 参数**，让 Agent 内部自动处理结构化输出（支持 ProviderStrategy / ToolStrategy）。
+
+### 修复后的完整可运行代码（直接复制替换）
+
+```python
+"""
+学习Pydantic结构化输出模型 - 正确写法
+"""
+
+import os
+from dotenv import load_dotenv
+
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
+
+load_dotenv(override=True)
+
+model_name = os.getenv("MODEL", "gpt-3.5-turbo")
+base_url = os.getenv("BASE_URL", "http://localhost:8000")
+api_key = os.getenv("API_KEY")
+
+# 1. 使用原始模型创建 Agent（必须是原始 ChatModel）
+base_model = ChatOpenAI(
+    model=model_name,
+    base_url=base_url,
+    api_key=api_key
+)
+
+class WeatherInfo(BaseModel):
+    city: str
+    temperature: float = Field(..., description="Temperature in Celsius")
+    condition: str = Field(..., description="Weather condition, e.g., sunny, rainy")
+
+@tool
+def get_weather(city: str) -> str:
+    """获取指定城市的天气信息"""
+    if city == "北京":
+        return WeatherInfo(city=city, temperature=25.0, condition="sunny").model_dump_json()
+    elif city == "上海":
+        return WeatherInfo(city=city, temperature=28.0, condition="cloudy").model_dump_json()
+    elif city == "广州":
+        return WeatherInfo(city=city, temperature=30.0, condition="rainy").model_dump_json()
+    else:
+        return WeatherInfo(city=city, temperature=20.0, condition="sunny").model_dump_json()
+
+# 2. 创建 Agent + 结构化输出（关键在这里！）
+agent = create_agent(
+    model=base_model,                    # ← 原始模型
+    tools=[get_weather],
+    system_prompt="你是一个天气预报助手，请先使用工具获取天气，然后严格按照 WeatherInfo 格式输出结构化信息。",
+    response_format=WeatherInfo,         # ← 官方推荐写法，自动结构化输出
+)
+
+# 3. 调用 Agent
+res = agent.invoke({"messages": [{"role": "user", "content": "请告诉我北京的天气。"}]})
+
+# 4. 查看结果（结构化数据在 'structured_response' 里）
+print("=== Agent 完整状态 ===")
+print(res)
+
+print("\n=== 结构化输出结果（Pydantic 对象）===")
+structured = res["structured_response"]   # 自动解析后的 WeatherInfo 对象
+print(structured)
+print(f"城市: {structured.city}")
+print(f"温度: {structured.temperature}°C")
+print(f"天气: {structured.condition}")
+```
+
+### 运行后预期输出
+```
+=== 结构化输出结果（Pydantic 对象）===
+city='北京' temperature=25.0 condition='sunny'
+城市: 北京
+温度: 25.0°C
+天气: sunny
+```
+
+---
+
+**额外说明**
+
+- `response_format=WeatherInfo` 是官方在 `create_agent` 中专门为结构化输出准备的参数，内部会自动选择最合适的策略（原生 JSON Schema 或 ToolStrategy）。
+- 如果你想在普通 chain（非 Agent）中使用结构化输出，才用 `model.with_structured_output()`。
+- 工具里返回 `model_dump_json()` 很好，Agent 能轻松读取。
+
+这样就彻底解决了报错，同时符合最新最佳实践。  
+想再加 `include_raw=True`（同时返回原始文本）、异步版本、或把 `create_agent` 换成 `create_react_agent` 也行，随时告诉我！🚀

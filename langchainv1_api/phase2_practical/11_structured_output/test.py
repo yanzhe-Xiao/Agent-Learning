@@ -1,102 +1,98 @@
 """
-简单测试：验证结构化输出功能
-
-⚠️ 注意：with_structured_output 可能在某些模型上不完全支持
+学习Pydantic结构化输出模型
 """
 
 import os
-import json
+
 from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage
+from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI, tools
 from pydantic import BaseModel, Field
 
-# 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-    raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
-        "访问 https://console.groq.com/keys 获取免费密钥"
-    )
+load_dotenv(override=True)
+model_name = os.getenv("MODEL", "gpt-3.5-turbo")
+base_url = os.getenv("BASE_URL", "http://localhost:8000")
+api_key = os.getenv("API_KEY")
 
-# 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
+mysql_url = os.getenv("MYSQL_URL")
+redis_url = os.getenv("REDIS_URL")
+
+model = ChatOpenAI(
+    model=model_name,
+    base_url=base_url,
+    api_key=api_key
+)
+class WeatherInfo(BaseModel):
+    city: str
+    temperature: float = Field(..., description="Temperature in Celsius")
+    condition: str = Field(..., description="Weather condition, e.g., sunny, rainy")
+
+# @tool
+# def get_weather(city: str) -> str:
+#     """
+#     获取指定城市的天气信息
+
+#     参数:
+#         city: 城市名称，如"北京"、"上海"
+
+#     返回:
+#         天气信息字符串
+#     """
+#     # 使用switch-case
+#     if city == "北京":
+#         return WeatherInfo(city=city, temperature=25.0, condition="sunny").model_dump_json()  # 返回JSON字符串
+#     elif city == "上海":
+#         return WeatherInfo(city=city, temperature=28.0, condition="cloudy").model_dump_json()
+#     elif city == "广州":
+#         return WeatherInfo(city=city, temperature=30.0, condition="rainy").model_dump_json()
+#     else:
+#         return WeatherInfo(city=city, temperature=20.0, condition="sunny").model_dump_json()  # 默认返回晴天，实际应用中可以调用天气API获取真实数据
+
+# # 不要把 with_structured_output 直接套在传给 Agent 的 model 上。
+# # 而是使用 create_agent 的 response_format 参数，让 Agent 内部自动处理结构化输出（支持 ProviderStrategy / ToolStrategy）。
+# agent = create_agent(
+#     model=model,
+#     tools=[get_weather],
+#     system_prompt="你是一个天气预报助手，提供结构化的天气信息。输出严格按照 WeatherInfo 格式。",
+#     response_format=WeatherInfo
+# )
+# res = agent.invoke({"messages": [{"role": "user", "content": "请告诉我北京的天气。"}]})
+# print(res["messages"][-1].content)  # 输出结构化的天气信息
+
+# # 结构化输出结果
+# print("\n=== 结构化输出结果（Pydantic 对象）===")
+# structured:WeatherInfo = res["structured_response"]   # 自动解析后的 WeatherInfo 对象
+# print(structured)
+# print(f"城市: {structured.city}")
+# print(f"温度: {structured.temperature}°C")
+# print(f"天气: {structured.condition}")
 
 
-# 辅助函数
-def safe_parse_json(text: str, default: dict = None) -> dict:
-    """安全地解析JSON文本"""
-    if default is None:
-        default = {}
-    
-    content = text.strip()
-    if "```json" in content:
-        try:
-            content = content.split("```json")[1].split("```")[0]
-        except IndexError:
-            pass
-    elif "```" in content:
-        try:
-            parts = content.split("```")
-            if len(parts) >= 2:
-                content = parts[1]
-        except IndexError:
-            pass
-    
-    try:
-        return json.loads(content.strip())
-    except json.JSONDecodeError:
-        return default
+# with_structured_output 
+model1 = model.with_structured_output(WeatherInfo)  # 直接套在 model 上，Agent 内部不处理结构化输出了
+res:WeatherInfo = model1.invoke([SystemMessage(content="请严格按照 WeatherInfo 格式输出"),HumanMessage(content="信阳今天的天气比较晴朗，感觉有将近20度")]) # type: ignore
+print("\n=== 结构化输出结果（Pydantic 对象）===")
+print(type(res))
+print(res.city)
+print(res.temperature)
+print(res.condition)
+from langchain_core.output_parsers import PydanticOutputParser  # 结构化输出解析器
 
-
-print("=" * 70)
-print("测试：结构化输出 - Pydantic 模型")
-print("=" * 70)
-
-class Person(BaseModel):
-    """人物信息"""
-    name: str = Field(description="姓名")
-    age: int = Field(description="年龄")
-    occupation: str = Field(description="职业")
-
-print("\n提示: 张三是一名 30 岁的软件工程师")
-
-# 尝试使用结构化输出，失败则使用 fallback
-try:
-    structured_llm = model.with_structured_output(Person)
-    result = structured_llm.invoke("张三是一名 30 岁的软件工程师")
-    print(f"\n返回类型: {type(result)}")
-    print(f"姓名: {result.name}")
-    print(f"年龄: {result.age}")
-    print(f"职业: {result.occupation}")
-    
-except Exception as e:
-    print(f"\n⚠️ with_structured_output 失败: {e}")
-    print("📝 使用 JSON 解析 fallback...")
-    
-    # Fallback: 手动 JSON 解析
-    json_prompt = """张三是一名 30 岁的软件工程师
-
-请提取人物信息，用JSON格式返回：
-{"name": "姓名", "age": 年龄数字, "occupation": "职业"}
-
-只返回JSON，不要其他文字。"""
-    
-    response = model.invoke([HumanMessage(content=json_prompt)])
-    data = safe_parse_json(response.content, {"name": "张三", "age": 30, "occupation": "软件工程师"})
-    result = Person.model_validate(data)
-    
-    print(f"\n返回类型: {type(result)}")
-    print(f"姓名: {result.name}")
-    print(f"年龄: {result.age}")
-    print(f"职业: {result.occupation}")
-
-print("\n" + "=" * 70)
-print("测试结果：")
-print("  - 结构化输出功能 [成功]")
-print("  - 自动类型验证 [成功]")
-print("=" * 70)
-
-print("\n测试完成！")
+# PydanticParserOutput
+parser = PydanticOutputParser(pydantic_object=WeatherInfo)
+prompt = ChatPromptTemplate.from_template(
+    "你是一个文本助手，提取用户信息:{input}，必须遵守格式{format_instructions}")
+prompt = prompt.partial(format_instructions = parser.get_format_instructions())
+chain = prompt | model | parser
+response:WeatherInfo = chain.invoke({"input": "今天西安天气多云，最高温度30度，最低温度20度，适合外出散步！"})
+print("\n=== 结构化输出结果（Pydantic 对象）===")
+print(response)
+print(type(response))
+print(response.city)
+print(response.temperature)
+print(response.condition)
+print(response.model_dump()) # dict

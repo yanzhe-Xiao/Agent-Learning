@@ -10,6 +10,12 @@ jupyter
 ipykernel
 langchain_classic
 pymysql
+mysql-connector-python
 unstructured
 python-docx
 langgraph-checkpoint-redis
+langgraph-checkpoint-mysql[pymysql]
+langchain-huggingface 
+langchain-pinecone 
+pinecone-client
+langchain-groq

@@ -1,84 +1,57 @@
 """
-简单测试：验证 SQLite 持久化功能
+自己写Redis/MySQL的checkpointing代码，测试一下是否能正确保存和恢复对话状态。
 """
 
 import os
-from dotenv import load_dotenv
-from langchain.chat_models import init_chat_model
+
+import dotenv
 from langchain.agents import create_agent
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langchain_openai import ChatOpenAI
+dotenv.load_dotenv(override=True)
+from langgraph.checkpoint.mysql.pymysql import PyMySQLSaver
+from langgraph.checkpoint.redis import RedisSaver
 
-# 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+model_name = os.getenv("MODEL", "gpt-3.5-turbo")
+base_url = os.getenv("BASE_URL", "http://localhost:8000")
+api_key = os.getenv("API_KEY")
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-    raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
-        "访问 https://console.groq.com/keys 获取免费密钥"
-    )
+mysql_url = os.getenv("MYSQL_URL")
+redis_url = os.getenv("REDIS_URL")
 
-# 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
+model = ChatOpenAI(
+    model=model_name,
+    base_url=base_url,
+    api_key=api_key
+)
 
-
-
-print("=" * 70)
-print("测试：SqliteSaver 持久化功能")
-print("=" * 70)
-
-# 创建持久化 checkpointer（直接使用文件名，无需 sqlite:/// 前缀）
-db_path = "test_checkpoints.sqlite"
-
-# 使用 with 语句正确管理 SqliteSaver
-with SqliteSaver.from_conn_string(db_path) as checkpointer:  # 直接传文件名
-    # 创建 Agent
+with PyMySQLSaver.from_conn_string(mysql_url or "") as mysql_saver:
+    mysql_saver.setup()
     agent = create_agent(
-            model=model,
-            tools=[],
-            system_prompt="你是一个有帮助的助手。",
-            checkpointer=checkpointer
-        )
-
-    config = {"configurable": {"thread_id": "test_persistence"}}
-
-    print("\n第一轮对话：")
-    print("用户: 我叫王五")
-    response1 = agent.invoke(
-        {"messages": [{"role": "user", "content": "我叫王五"}]},
-        config=config
+        model=model,
+        checkpointer=mysql_saver,
+        system_prompt="你是我的人工智能助手，帮助我完成各种任务。",
     )
-    print(f"Agent: {response1['messages'][-1].content}")
+    config = {"configurable": {"thread_id": "test_thread_mysql"}}
+    res = agent.invoke({"messages": [{"role": "user", "content": "什么是langchain？"}]}, config=config )
+    print(f"Agent: {res['messages'][-1].content}")
 
-print("\n第二轮对话（模拟重启）：")
-print("[创建新的 agent 实例...]")
+    res = agent.invoke({"messages": [{"role": "user", "content": "你能否告诉我上次我们聊了什么吗？"}]}, config=config )
+    print(f"Agent: {res['messages'][-1].content}")
 
-# 模拟重启：创建新的 checkpointer 和 agent
-with SqliteSaver.from_conn_string(db_path) as checkpointer_new:  # 直接传文件名
-    agent_new = create_agent(
-            model=model,
-            tools=[],
-            system_prompt="你是一个有帮助的助手。",
-            checkpointer=checkpointer_new
-        )
+    mysql_saver.delete_thread("test_thread_mysql")
 
-    print("用户: 我叫什么？")
-    response2 = agent_new.invoke(
-        {"messages": [{"role": "user", "content": "我叫什么？"}]},
-        config=config
+with RedisSaver.from_conn_string(redis_url or "") as redis_saver:
+    redis_saver.setup()
+    agent = create_agent(
+        model=model,
+        checkpointer=redis_saver,
+        system_prompt="你是我的人工智能助手，帮助我完成各种任务。",
     )
-    print(f"Agent: {response2['messages'][-1].content}")
+    config = {"configurable": {"thread_id": "test_thread_redis"}}
+    res = agent.invoke({"messages": [{"role": "user", "content": "什么是langchain？"}]}, config=config )
+    print(f"Agent: {res['messages'][-1].content}")
 
-    print("\n" + "=" * 70)
-    print("持久化状态：")
-    print(f"  数据库文件: {db_path}")
-    print(f"  thread_id: {config['configurable']['thread_id']}")
-    print(f"  总消息数: {len(response2['messages'])}")
-    print("=" * 70)
+    res = agent.invoke({"messages": [{"role": "user", "content": "你能否告诉我上次我们聊了什么吗？"}]}, config=config )
+    print(f"Agent: {res['messages'][-1].content}")
 
-    if "王五" in response2['messages'][-1].content:
-        print("\n[成功] 测试成功！Agent 记住了名字（持久化有效）。")
-    else:
-        print("\n[警告] Agent 可能没有正确记住")
-
-print("\n测试完成！")
+    redis_saver.delete_thread("test_thread_redis")

@@ -19,23 +19,24 @@ import json
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 from typing import Optional, List, TypeVar, Type
 from enum import Enum
 
-# 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+load_dotenv(override=True)
+model_name = os.getenv("MODEL", "gpt-3.5-turbo")
+base_url = os.getenv("BASE_URL", "http://localhost:8000")
+api_key = os.getenv("API_KEY")
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-    raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
-        "访问 https://console.groq.com/keys 获取免费密钥"
-    )
+mysql_url = os.getenv("MYSQL_URL")
+redis_url = os.getenv("REDIS_URL")
 
-# 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
-
+model = ChatOpenAI(
+    model=model_name,
+    base_url=base_url,
+    api_key=api_key
+)
 
 # ==================== 辅助函数 ====================
 

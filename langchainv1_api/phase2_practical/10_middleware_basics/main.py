@@ -16,21 +16,22 @@ from langchain.chat_models import init_chat_model
 from langchain.agents import create_agent
 from langchain_core.tools import tool
 from langchain.agents.middleware import AgentMiddleware
+from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 
-# 加载环境变量
-load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+load_dotenv(override=True)
+model_name = os.getenv("MODEL", "gpt-3.5-turbo")
+base_url = os.getenv("BASE_URL", "http://localhost:8000")
+api_key = os.getenv("API_KEY")
 
-if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
-    raise ValueError(
-        "\n请先在 .env 文件中设置有效的 GROQ_API_KEY\n"
-        "访问 https://console.groq.com/keys 获取免费密钥"
-    )
+mysql_url = os.getenv("MYSQL_URL")
+redis_url = os.getenv("REDIS_URL")
 
-# 初始化模型
-model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
-
+model = ChatOpenAI(
+    model=model_name,
+    base_url=base_url,
+    api_key=api_key
+)
 
 
 @tool
@@ -498,17 +499,17 @@ def main():
     print("="*70)
 
     try:
-        # example_1_basic_middleware()
-        # input("\n按 Enter 继续...")
+        example_1_basic_middleware()
+        input("\n按 Enter 继续...")
 
-        # example_2_state_modification()
-        # input("\n按 Enter 继续...")
+        example_2_state_modification()
+        input("\n按 Enter 继续...")
 
-        # example_3_message_trimming()
-        # input("\n按 Enter 继续...")
+        example_3_message_trimming()
+        input("\n按 Enter 继续...")
 
-        # example_4_output_validation()
-        # input("\n按 Enter 继续...")
+        example_4_output_validation()
+        input("\n按 Enter 继续...")
 
         example_5_multiple_middleware()
         input("\n按 Enter 继续...")
