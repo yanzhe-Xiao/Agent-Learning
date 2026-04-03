@@ -11,7 +11,8 @@ import time
 from typing import Optional, List
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
-from langchain.agents import create_agent  # LangChain 1.0 统一 API
+from langchain.agents import create_agent
+from pydantic import field_validator  # LangChain 1.0 统一 API
 
 # 加载环境变量
 load_dotenv()
@@ -65,7 +66,8 @@ def example_1_advanced_tools():
         city: str = Field(description="城市名称")
         unit: str = Field(default="celsius", description="温度单位: celsius 或 fahrenheit")
         
-        @validator("unit")
+        @field_validator("unit")
+        @classmethod
         def validate_unit(cls, v):
             if v not in ["celsius", "fahrenheit"]:
                 raise ValueError("unit 必须是 'celsius' 或 'fahrenheit'")
@@ -135,7 +137,7 @@ def example_2_error_handling():
     from langchain_core.tools import tool, ToolException
     
     # 基本错误处理
-    @tool(handle_tool_error=True)
+    @tool
     def safe_divide(a: float, b: float) -> str:
         """安全的除法运算。
         
@@ -143,33 +145,43 @@ def example_2_error_handling():
             a: 被除数
             b: 除数
         """
-        if b == 0:
-            raise ToolException("除数不能为零！请提供一个非零的除数。")
-        return f"{a} ÷ {b} = {a / b:.4f}"
+        try:
+            if b == 0:
+                raise ValueError("除数不能为零！请提供一个非零的除数。")
+            return f"{a} ÷ {b} = {a / b:.4f}"
+        except ValueError as e:
+            return f"⚠️ 输入错误：{e}"
+        except Exception as e:
+            return f"❌ 计算错误：{str(e)}"
     
     # 自定义错误处理
     def custom_error_handler(error: ToolException) -> str:
         return f"⚠️ 操作失败: {error.args[0]}\n💡 建议: 请检查输入参数是否正确。"
     
-    @tool(handle_tool_error=custom_error_handler)
+    @tool
     def fetch_data(url: str) -> str:
         """从 URL 获取数据（模拟）。
         
         Args:
             url: 要获取数据的 URL
         """
-        if not url.startswith("http"):
-            raise ToolException("URL 必须以 http:// 或 https:// 开头")
-        if "error" in url:
-            raise ToolException("无法连接到服务器")
-        return f"成功获取数据: {url}"
+        try:
+            if not url.startswith("http"):
+                raise ValueError("URL 必须以 http:// 或 https:// 开头")
+            if "error" in url:
+                raise ConnectionError("无法连接到服务器")
+            return f"成功获取数据：{url}"
+        except (ValueError, ConnectionError) as e:
+            return custom_error_handler(e)
+        except Exception as e:
+            return f"❌ 未知错误：{str(e)}"
     
     # 带重试的工具
     @tool
     def unreliable_api(query: str) -> str:
         """模拟不稳定的 API 调用。"""
         import random
-        if random.random() < 0.3:  # 30% 失败率
+        if random.random() < 1:  # 30% 失败率
             raise Exception("API 临时不可用")
         return f"API 返回: {query}"
     
@@ -367,11 +379,12 @@ def example_4_tool_composition():
         """创建特定分类的搜索工具"""
         @tool
         def category_search(query: str) -> str:
+            """在指定分类中搜索商品。"""
             f"""在 {category} 分类中搜索商品。"""
             return f"[{category}] 搜索 '{query}' 的结果..."
         
         category_search.name = f"search_{category.lower()}"
-        category_search.description = f"在{category}分类中搜索相关商品"
+        # category_search.description = f"在{category}分类中搜索相关商品"
         return category_search
     
     # 创建多个分类搜索工具
@@ -408,11 +421,11 @@ def example_5_complete_agent():
     print("=" * 60)
     
     # 检查 API Key
-    api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        print("\n⚠️ 未检测到 API Key，跳过此示例")
-        print("请设置 DEEPSEEK_API_KEY 或 OPENAI_API_KEY 环境变量")
-        return
+    # api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+    # if not api_key:
+    #     print("\n⚠️ 未检测到 API Key，跳过此示例")
+    #     print("请设置 DEEPSEEK_API_KEY 或 OPENAI_API_KEY 环境变量")
+    #     return
     
     from langchain.chat_models import init_chat_model
     from langchain.agents import create_agent
@@ -492,11 +505,11 @@ def example_5_complete_agent():
     
     # ====== 创建智能体 ======
     
-    # 确定使用哪个模型
-    if os.getenv("DEEPSEEK_API_KEY"):
-        model = init_chat_model("deepseek-chat", model_provider="deepseek")
-    else:
-        model = init_chat_model("gpt-3.5-turbo", model_provider="openai")
+    # # 确定使用哪个模型
+    # if os.getenv("DEEPSEEK_API_KEY"):
+    #     model = init_chat_model("deepseek-chat", model_provider="deepseek")
+    # else:
+    #     model = init_chat_model("gpt-3.5-turbo", model_provider="openai")
     
     tools = [check_order, get_faq, calculate_shipping]
     memory = MemorySaver()

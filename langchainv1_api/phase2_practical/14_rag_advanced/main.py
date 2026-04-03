@@ -45,7 +45,6 @@ if not GROQ_API_KEY or GROQ_API_KEY == "your_groq_api_key_here":
 model = init_chat_model("groq:llama-3.3-70b-versatile", api_key=GROQ_API_KEY)
 
 
-
 # ============================================================================
 # 示例 1：准备测试数据
 # ============================================================================
@@ -482,7 +481,7 @@ def main():
 
         # 6. RAG Agent
         example_6_rag_agent_hybrid(ensemble_retriever)
-
+        
         print("\n" + "="*70)
         print(" 完成！")
         print("="*70)
