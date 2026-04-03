@@ -22,9 +22,9 @@ from langchain_openai import ChatOpenAI
 
 # 加载环境变量
 load_dotenv(dotenv_path="D://Projects//Agent-Learning//.env")
-API_KEY = os.getenv("API_KEY")
-MODEL_NAME = os.getenv("MODEL")
-BASE_URL = os.getenv("BASE_URL")
+API_KEY = os.getenv("OPENROUTER_API_KEY")
+MODEL_NAME = os.getenv("OPENROUTER_MODEL")
+BASE_URL = os.getenv("OPENROUTER_BASE_URL")
 print(f"使用模型: {MODEL_NAME}")
 if not API_KEY or API_KEY == "your_api_key_here":
     raise ValueError(

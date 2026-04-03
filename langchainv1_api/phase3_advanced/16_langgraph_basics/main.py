@@ -40,7 +40,7 @@ def simple_workflow():
     print("=" * 60)
 
     # 定义状态
-    class SimpleState(TypedDict):
+    class SimpleState(TypedDict): # Pydantic 也可以
         input_text: str
         processed_text: str
         llm_response: str

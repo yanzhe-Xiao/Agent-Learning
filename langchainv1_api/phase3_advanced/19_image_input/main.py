@@ -22,23 +22,23 @@ from dotenv import load_dotenv
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 # 加载环境变量
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-if not OPENAI_API_KEY or OPENAI_API_KEY == "your_openai_api_key_here":
-    raise ValueError(
-        "\n请先在 .env 文件中设置有效的 OPENAI_API_KEY\n"
-        "图像处理需要使用 OpenAI 的视觉模型\n"
-        "访问 https://platform.openai.com/ 获取密钥"
-    )
-
-# 初始化模型（图像处理需要支持视觉的模型）
-model = init_chat_model("openai:gpt-4o-mini", api_key=OPENAI_API_KEY)
+prefix = "OPENROUTER_"
+API_KEY = os.getenv(f"{prefix}API_KEY")
+MODEL_NAME = os.getenv(f"{prefix}MODEL")
+BASE_URL = os.getenv(f"{prefix}BASE_URL")
+print(f"使用模型: {MODEL_NAME}")
+model = ChatOpenAI(
+    model=MODEL_NAME, # type: ignore
+    api_key=API_KEY, # type: ignore
+    base_url=BASE_URL,
+)
 
 # 图片目录
-IMAGES_DIR = Path(__file__).parent / "images"
+IMAGES_DIR = Path(__file__).parent / "images" 
 
 # ============================================================
 # 辅助函数
@@ -114,7 +114,7 @@ def example_1_image_description():
     print("=" * 60)
 
     # 检查图片是否存在
-    image_path = check_image_exists("sample.jpg")
+    image_path = check_image_exists("sample.png")
     if not image_path:
         print("跳过此示例")
         return None
@@ -146,7 +146,7 @@ def example_2_image_qa():
     print("示例 2：图像问答")
     print("=" * 60)
 
-    image_path = check_image_exists("sample.jpg")
+    image_path = check_image_exists("sample.png")
     if not image_path:
         print("跳过此示例")
         return None
@@ -192,7 +192,7 @@ def example_3_ocr():
     print("=" * 60)
 
     # 需要一张包含文字的图片
-    image_path = check_image_exists("text_image.jpg")
+    image_path = check_image_exists("text_image.png")
     if not image_path:
         print("提示: 请准备一张包含文字的图片用于 OCR 测试")
         print("跳过此示例")
