@@ -26,7 +26,7 @@ from langchain_openai import ChatOpenAI
 
 # 加载环境变量
 load_dotenv()
-prefix = "OPENROUTER_"
+prefix = ""
 API_KEY = os.getenv(f"{prefix}API_KEY")
 MODEL_NAME = os.getenv(f"{prefix}MODEL")
 BASE_URL = os.getenv(f"{prefix}BASE_URL")
@@ -318,8 +318,8 @@ if __name__ == "__main__":
     IMAGES_DIR.mkdir(exist_ok=True)
     
     # 运行示例
-    example_1_image_description()
-    example_2_image_qa()
+    # example_1_image_description()
+    # example_2_image_qa()
     example_3_ocr()
     example_4_chart_analysis()
     
